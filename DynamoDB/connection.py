@@ -52,3 +52,17 @@ if __name__ == '__main__':
     dynamodb_resource_default = db_connection_default.connect()
     if dynamodb_resource_default:
         print("Conexão bem-sucedida usando credenciais padrão!")
+
+    def get_table_data(self, table_name: str, key: str) -> list:
+        """Busca dados específicos de uma tabela DynamoDB."""
+        try:
+            if not self.dynamodb:
+                self.connect()
+
+            table = self.dynamodb.Table(table_name)
+            response = table.get_item(Key={'config_key': key})
+            return response.get('Item', {}).get('config_value', [])
+
+        except Exception as e:
+            print(f"Erro ao buscar dados: {e}")
+            return []  # Retorna lista vazia como fallback
