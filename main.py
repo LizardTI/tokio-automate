@@ -1,19 +1,6 @@
 # main.py
 from DynamoDB.connection import DynamoDBConnection
 
-def listar_tabelas(dynamodb_resource):
-    """Lista e exibe os nomes das tabelas no DynamoDB."""
-    try:
-        tables = list(dynamodb_resource.tables.all())
-        if tables:
-            print("Tabelas encontradas:")
-            for table in tables:
-                print(f"- {table.name}")
-        else:
-            print("Nenhuma tabela encontrada.")
-    except Exception as e:
-        print(f"Erro ao listar tabelas: {e}")
-
 def main():
     region = 'us-east-1'
 
@@ -27,20 +14,20 @@ def main():
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key
         )
-        dynamodb_resource_explicit = db_connection_explicit.connect()
-        if dynamodb_resource_explicit:
+        if db_connection_explicit.connect():
             print("\nConexão bem-sucedida usando credenciais explícitas!")
-            listar_tabelas(dynamodb_resource_explicit)
+            db_connection_explicit.listar_tabelas()
+            db_connection_explicit.buscar_dados_tabela('comercial-table')
     except Exception as e:
         print(f"Falha na conexão explícita: {e}")
 
     # Exemplo de uso com credenciais padrão (RECOMENDADO)
     try:
         db_connection_default = DynamoDBConnection(region_name=region)
-        dynamodb_resource_default = db_connection_default.connect()
-        if dynamodb_resource_default:
+        if db_connection_default.connect():
             print("\nConexão bem-sucedida usando credenciais padrão!")
-            listar_tabelas(dynamodb_resource_default)
+            db_connection_default.listar_tabelas()
+            db_connection_default.buscar_dados_tabela('comercial-table')
     except Exception as e:
         print(f"Falha na conexão padrão: {e}")
 
