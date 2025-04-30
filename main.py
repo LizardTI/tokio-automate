@@ -1,35 +1,38 @@
 # main.py
-from DynamoDB.connection import DynamoDBConnection
+import os
+from DynamoDB.get_tables import DynamoDBConnection
 
 def main():
-    region = 'us-east-1'
+    region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+    aws_key    = os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret = os.getenv('AWS_SECRET_ACCESS_KEY')
 
-    # Exemplo de uso com credenciais explícitas (APENAS PARA TESTES, NUNCA COMMITAR EM PRODUÇÃO)
-    access_key = 'AKIAV5CUZH5XNKRORK5G'
-    secret_key = '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'
-
-    try:
-        db_connection_explicit = DynamoDBConnection(
-            region_name=region,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key
+    # Monta args de conexão (ambiente ou credential chain)
+    conn_kwargs = {'region_name': region}
+    if aws_key and aws_secret:
+        conn_kwargs.update(
+            aws_access_key_id=aws_key,
+            aws_secret_access_key=aws_secret
         )
-        if db_connection_explicit.connect():
-            print("\nConexão bem-sucedida usando credenciais explícitas!")
-            db_connection_explicit.listar_tabelas()
-            db_connection_explicit.buscar_dados_tabela('comercial-table')
-    except Exception as e:
-        print(f"Falha na conexão explícita: {e}")
 
-    # Exemplo de uso com credenciais padrão (RECOMENDADO)
-    try:
-        db_connection_default = DynamoDBConnection(region_name=region)
-        if db_connection_default.connect():
-            print("\nConexão bem-sucedida usando credenciais padrão!")
-            db_connection_default.listar_tabelas()
-            db_connection_default.buscar_dados_tabela('comercial-table')
-    except Exception as e:
-        print(f"Falha na conexão padrão: {e}")
+    db = DynamoDBConnection(**conn_kwargs)
+    if not db.connect():
+        print("Falha ao conectar no DynamoDB")
+        return
+
+    # Busca TODOS os itens
+    all_items = db.buscar_dados_tabela('comercial-table')
+
+    # Filtra apenas plataforma == "TOKIO"
+    tokio_items = [item for item in all_items if item.get('plataforma') == 'TOKIO']
+
+    # Exibe resultado
+    if tokio_items:
+        print(f"Foram encontradas {len(tokio_items)} entradas com plataforma 'TOKIO':")
+        for entry in tokio_items:
+            print(entry)
+    else:
+        print("Nenhum item com plataforma 'TOKIO' encontrado.")
 
 if __name__ == "__main__":
     main()
