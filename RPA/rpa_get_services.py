@@ -126,56 +126,39 @@ class RpaService:
 
     def main_process(self):
         logger.info("Iniciando processo principal...")
-
         try:
-            logger.info("Localizando tipo de serviço disponível...")
-            tipo_servico_element = self.driver.find_element(
-                By.XPATH,
-                "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]"
-            )
-            tipo_servico = tipo_servico_element.text.strip()
-            logger.info(f"Tipo de serviço identificado: {tipo_servico}")
+            # Clica no serviço disponível para expandir os dados
+            self.driver.find_element(By.XPATH,
+                "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]").click()
 
-            logger.info("Clicando para expandir detalhes do serviço...")
-            tipo_servico_element.click()
-            time.sleep(1)  # Pequeno delay para evitar falhas por carregamento
-
-            logger.info("Coletando dados do serviço...")
-
-            bairro = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[2]").text.strip()
-            cidade = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[3]").text.strip()
+            tipo_servico = self.driver.find_element(By.XPATH,
+                "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]").text
+            bairro = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[2]").text
+            cidade = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[3]").text
             data_inicio = self.driver.find_element(By.XPATH,
-                                                   "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span").text.strip()
+                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span").text
             data_fim = self.driver.find_element(By.XPATH,
-                                                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span").text.strip()
+                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span").text
             localizacao = self.driver.find_element(By.XPATH,
-                                                   "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span").text.strip()
+                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span").text
 
             logger.info(
-                f"Capturado da UI => Serviço: {tipo_servico}, Cidade: {cidade}, Bairro: {bairro}, "
-                f"Início: {data_inicio}, Fim: {data_fim}, Localização: {localizacao}"
-            )
+                f"Capturado da UI => Serviço: {tipo_servico}, Cidade: {cidade}, Bairro: {bairro}, Início: {data_inicio}, Fim: {data_fim}, Localização: {localizacao}")
 
             expected_service = next((s for s in self.expected['services'] if s.get('active')), None)
             expected_city = self.expected['cities'][0] if self.expected['cities'] else {}
 
             match = (
-                    tipo_servico.lower() == expected_service['service'].strip().lower() and
-                    cidade.lower() == expected_city['city'].strip().lower() and
-                    bairro.lower() in [n['name'].strip().lower() for n in expected_city.get('neighborhoods', []) if
-                                       n['active']]
+                tipo_servico.strip().lower() == expected_service['service'].strip().lower() and
+                cidade.strip().lower() == expected_city['city'].strip().lower() and
+                bairro.strip().lower() in [n['name'].strip().lower() for n in expected_city.get('neighborhoods', []) if n['active']]
             )
 
             if match:
                 logger.info("Dados validados com sucesso! Aceitando serviço...")
-                time.sleep(1)  # Delay antes de clicar
                 self.driver.find_element(By.XPATH, "//*[@id='aceitar']").click()
             else:
-                logger.warning("Dados não conferem com o esperado do DynamoDB. Recusando serviço...")
-                time.sleep(1)  # Delay antes de clicar
-                self.driver.find_element(By.XPATH, "//*[@id='recusar']").click()
-                logger.info("Serviço recusado com sucesso.")
+                logger.warning("Dados não conferem com o esperado do DynamoDB. Serviço NÃO aceito.")
 
         except Exception as e:
             logger.warning(f"Erro ao processar serviço: {e}")
-
