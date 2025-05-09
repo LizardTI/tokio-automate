@@ -37,4 +37,5 @@ class DynamoDBConnection:
                 items.extend(response.get('Items', []))
         except Exception as e:
             print(f"Erro ao buscar dados da tabela '{table_name}': {e}")
+            print(f"{items}")
         return items

@@ -24,8 +24,7 @@ logger = logging.getLogger(__name__)
 class RpaService:
     def __init__(self, service_name: str, table_name: str = 'comercial-table'):
         self.service_name = service_name
-        self.alert_checked = False
-        self.logged_in = False  # Adicionando flag para controlar estado do login
+        self.logged_in = False
         logger.info("Inicializando RpaService: %s", service_name)
 
         region = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
@@ -60,7 +59,7 @@ class RpaService:
 
     def start(self):
         logger.info("=== Iniciando fluxo de RPA '%s' ===", self.service_name)
-        self.login()  # Login ocorre apenas uma vez no início
+        self.login()
         while True:
             self.main_process()
             logger.info("Aguardando próximo ciclo...")
@@ -74,34 +73,8 @@ class RpaService:
         logger.info("Status solicitado para RPA '%s'", self.service_name)
         return "Em execução"
 
-    def confirmar_alerta(self):
-        if self.alert_checked:
-            return
-        try:
-            logger.info("Verificando alerta de múltiplos acessos...")
-            WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.ID, "alert-ok"))
-            )
-
-            ok_btn = self.driver.find_element(By.ID, "alert-ok")
-            ok_btn.click()
-
-            logger.info("Verificando alerta de múltiplos acessos...")
-            WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.ID, "logar"))
-            )
-
-            entrar_btn = self.driver.find_element(By.ID, "logar")
-            entrar_btn.click()
-
-            logger.info("Botões de alerta confirmados")
-        except TimeoutException:
-            logger.debug("Nenhum alerta de múltiplos acessos encontrado")
-        finally:
-            self.alert_checked = True
-
     def login(self):
-        if self.logged_in:  # Se já estiver logado, não faz nada
+        if self.logged_in:
             logger.debug("Login já realizado anteriormente")
             return
 
@@ -109,20 +82,35 @@ class RpaService:
         try:
             url = "https://tms-prestador.tokiomarine.com.br/login?returnUrl=home"
             self.driver.get(url)
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.ID, "usuario"))
-            )
 
-            logger.info("Preenchendo credenciais")
-            self.driver.find_element(By.ID, "usuario").send_keys("ALINE BASE")
-            pwd = self.driver.find_element(By.ID, "Senha")
-            pwd.send_keys("Ar91430863@")
-            pwd.send_keys(Keys.RETURN)
+            while not self.logged_in:
+                try:
+                    WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "usuario")))
+                    logger.info("Preenchendo credenciais")
+                    self.driver.find_element(By.ID, "usuario").clear()
+                    self.driver.find_element(By.ID, "usuario").send_keys("ALINE BASE")
+                    pwd = self.driver.find_element(By.ID, "Senha")
+                    pwd.clear()
+                    pwd.send_keys("Ar91430863@")
+                    pwd.send_keys(Keys.RETURN)
 
-            time.sleep(3)
-            self.confirmar_alerta()
-            self.logged_in = True  # Marca como logado após sucesso
+                    try:
+                        element = WebDriverWait(self.driver, 5).until(
+                            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'OK')]"))
+                        )
+                        self.driver.execute_script("arguments[0].click();", element)
+                        logger.info("Alerta de múltiplos acessos confirmado")
+                    except TimeoutException:
+                        logger.debug("Nenhum alerta para confirmar")
 
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "main-content"))
+                    )
+                    logger.info("Login realizado com sucesso")
+                    self.logged_in = True
+                except TimeoutException:
+                    if not self.logged_in:
+                        time.sleep(3)
         except Exception:
             logger.exception("Erro durante o login")
             self.stop()
@@ -138,29 +126,56 @@ class RpaService:
 
     def main_process(self):
         logger.info("Iniciando processo principal...")
-        self.confirmar_alerta()  # Apenas verifica alertas, não faz login novamente
+
         try:
-            tipo_servico = self.driver.find_element(By.XPATH,
-                                                    "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]").text
-            logger.info(f"Tipo de serviço: {tipo_servico}")
+            logger.info("Localizando tipo de serviço disponível...")
+            tipo_servico_element = self.driver.find_element(
+                By.XPATH,
+                "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]"
+            )
+            tipo_servico = tipo_servico_element.text.strip()
+            logger.info(f"Tipo de serviço identificado: {tipo_servico}")
 
-            self.driver.find_element(By.XPATH, "//*[@id='aceitar']")
-            self.driver.find_element(By.XPATH, "//*[@id='recusar']")
-            self.driver.find_element(By.XPATH, "//*[@id='heading']/div/a").click()
+            logger.info("Clicando para expandir detalhes do serviço...")
+            tipo_servico_element.click()
+            time.sleep(1)  # Pequeno delay para evitar falhas por carregamento
 
-            bairro = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[2]").text
-            cidade = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[3]").text
+            logger.info("Coletando dados do serviço...")
 
-            logger.info(f"Cidade: {cidade}, Bairro: {bairro}")
-
+            bairro = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[2]").text.strip()
+            cidade = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[3]").text.strip()
             data_inicio = self.driver.find_element(By.XPATH,
-                                                   "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span").text
+                                                   "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span").text.strip()
             data_fim = self.driver.find_element(By.XPATH,
-                                                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span").text
+                                                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span").text.strip()
             localizacao = self.driver.find_element(By.XPATH,
-                                                   "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span").text
+                                                   "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span").text.strip()
 
-            logger.info(f"Início: {data_inicio}, Fim: {data_fim}, Localização: {localizacao}")
+            logger.info(
+                f"Capturado da UI => Serviço: {tipo_servico}, Cidade: {cidade}, Bairro: {bairro}, "
+                f"Início: {data_inicio}, Fim: {data_fim}, Localização: {localizacao}"
+            )
 
-        except Exception:
-            logger.warning("Algum dos elementos esperados não foi encontrado no DOM atual.")
+            expected_service = next((s for s in self.expected['services'] if s.get('active')), None)
+            expected_city = self.expected['cities'][0] if self.expected['cities'] else {}
+
+            match = (
+                    tipo_servico.lower() == expected_service['service'].strip().lower() and
+                    cidade.lower() == expected_city['city'].strip().lower() and
+                    bairro.lower() in [n['name'].strip().lower() for n in expected_city.get('neighborhoods', []) if
+                                       n['active']]
+            )
+
+            if match:
+                logger.info("Dados validados com sucesso! Aceitando serviço...")
+                time.sleep(1)  # Delay antes de clicar
+                self.driver.find_element(By.XPATH, "//*[@id='aceitar']").click()
+            else:
+                logger.warning("Dados não conferem com o esperado do DynamoDB. Recusando serviço...")
+                time.sleep(1)  # Delay antes de clicar
+                self.driver.find_element(By.XPATH, "//*[@id='recusar']").click()
+                logger.info("Serviço recusado com sucesso.")
+
+        except Exception as e:
+            logger.warning(f"Erro ao processar serviço: {e}")
+
