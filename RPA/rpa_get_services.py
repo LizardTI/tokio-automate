@@ -8,7 +8,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from DynamoDB.get_tables import DynamoDBConnection
 
@@ -59,106 +59,108 @@ class RpaService:
 
     def start(self):
         logger.info("=== Iniciando fluxo de RPA '%s' ===", self.service_name)
-        self.login()
-        while True:
-            self.main_process()
-            logger.info("Aguardando próximo ciclo...")
+
+        try:
+            self.login()
+            while True:
+                self.monitor_servicos()
+                time.sleep(2)
+        except Exception as e:
+            logger.exception("Erro crítico. Reiniciando fluxo após 10 segundos...")
             time.sleep(10)
+            self.start()
 
     def stop(self):
         logger.info("=== Finalizando fluxo de RPA '%s' ===", self.service_name)
         self.driver.quit()
 
     def get_status(self) -> str:
-        logger.info("Status solicitado para RPA '%s'", self.service_name)
         return "Em execução"
 
     def login(self):
-        if self.logged_in:
-            logger.debug("Login já realizado anteriormente")
-            return
-
-        logger.info("Acessando página de login...")
+        logger.info("Realizando login...")
         try:
-            url = "https://tms-prestador.tokiomarine.com.br/login?returnUrl=home"
-            self.driver.get(url)
+            self.driver.get("https://tms-prestador.tokiomarine.com.br/login?returnUrl=home")
+            WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "usuario")))
+            self.driver.find_element(By.ID, "usuario").clear()
+            self.driver.find_element(By.ID, "usuario").send_keys("ALINE BASE")
 
-            while not self.logged_in:
-                try:
-                    WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, "usuario")))
-                    logger.info("Preenchendo credenciais")
-                    self.driver.find_element(By.ID, "usuario").clear()
-                    self.driver.find_element(By.ID, "usuario").send_keys("ALINE BASE")
-                    pwd = self.driver.find_element(By.ID, "Senha")
-                    pwd.clear()
-                    pwd.send_keys("Ar91430863@")
-                    pwd.send_keys(Keys.RETURN)
+            pwd = self.driver.find_element(By.ID, "Senha")
+            pwd.clear()
+            pwd.send_keys("Ar91430863@")
+            pwd.send_keys(Keys.RETURN)
 
-                    try:
-                        element = WebDriverWait(self.driver, 5).until(
-                            EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'OK')]"))
-                        )
-                        self.driver.execute_script("arguments[0].click();", element)
-                        logger.info("Alerta de múltiplos acessos confirmado")
-                    except TimeoutException:
-                        logger.debug("Nenhum alerta para confirmar")
+            try:
+                element = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'OK')]"))
+                )
+                self.driver.execute_script("arguments[0].click();", element)
+                logger.info("Alerta de múltiplos acessos confirmado")
+            except TimeoutException:
+                pass
 
-                    WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "main-content"))
-                    )
-                    logger.info("Login realizado com sucesso")
-                    self.logged_in = True
-                except TimeoutException:
-                    if not self.logged_in:
-                        time.sleep(3)
+            logger.info("Login realizado com sucesso")
+
         except Exception:
             logger.exception("Erro durante o login")
-            self.stop()
             raise
 
-    def run_interactive(self):
+    def _sessao_valida(self) -> bool:
         try:
-            self.start()
-        except KeyboardInterrupt:
-            logger.info("Interrompido manualmente.")
-        finally:
-            self.stop()
+            self.driver.find_element(By.ID, "main-content")
+            return True
+        except NoSuchElementException:
+            return False
 
-    def main_process(self):
-        logger.info("Iniciando processo principal...")
+    def _safe_get_text(self, xpath: str) -> str:
         try:
-            # Clica no serviço disponível para expandir os dados
-            self.driver.find_element(By.XPATH,
-                "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]").click()
+            return self.driver.find_element(By.XPATH, xpath).text
+        except Exception as e:
+            logger.debug(f"[DOM] Elemento não encontrado: {xpath} | {e}")
+            return ""
 
-            tipo_servico = self.driver.find_element(By.XPATH,
-                "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]").text
-            bairro = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[2]").text
-            cidade = self.driver.find_element(By.XPATH, "//*[@id='collapse_1']/div/div[2]/div[3]").text
-            data_inicio = self.driver.find_element(By.XPATH,
-                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span").text
-            data_fim = self.driver.find_element(By.XPATH,
-                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span").text
-            localizacao = self.driver.find_element(By.XPATH,
-                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span").text
+    def monitor_servicos(self):
+        logger.info("Monitorando serviços...")
+        td_xpath = "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]"
 
-            logger.info(
-                f"Capturado da UI => Serviço: {tipo_servico}, Cidade: {cidade}, Bairro: {bairro}, Início: {data_inicio}, Fim: {data_fim}, Localização: {localizacao}")
-
-            expected_service = next((s for s in self.expected['services'] if s.get('active')), None)
-            expected_city = self.expected['cities'][0] if self.expected['cities'] else {}
-
-            match = (
-                tipo_servico.strip().lower() == expected_service['service'].strip().lower() and
-                cidade.strip().lower() == expected_city['city'].strip().lower() and
-                bairro.strip().lower() in [n['name'].strip().lower() for n in expected_city.get('neighborhoods', []) if n['active']]
+        try:
+            td_element = WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((By.XPATH, td_xpath))
             )
 
-            if match:
-                logger.info("Dados validados com sucesso! Aceitando serviço...")
-                self.driver.find_element(By.XPATH, "//*[@id='aceitar']").click()
-            else:
-                logger.warning("Dados não conferem com o esperado do DynamoDB. Serviço NÃO aceito.")
+            if td_element.is_displayed():
+                logger.info("Serviço detectado. Expandindo...")
+                td_element.click()
 
+                tipo_servico = td_element.text
+                bairro = self._safe_get_text("//*[@id='collapse_1']/div/div[2]/div[2]")
+                cidade = self._safe_get_text("//*[@id='collapse_1']/div/div[2]/div[3]")
+                data_inicio = self._safe_get_text("/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span")
+                data_fim = self._safe_get_text("/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span")
+                localizacao = self._safe_get_text("/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span")
+
+                logger.info(
+                    f"UI => Serviço: {tipo_servico}, Cidade: {cidade}, Bairro: {bairro}, Início: {data_inicio}, Fim: {data_fim}, Local: {localizacao}"
+                )
+
+                expected_service = next((s for s in self.expected['services'] if s.get('active')), None)
+                expected_city = self.expected['cities'][0] if self.expected['cities'] else {}
+
+                match = (
+                    tipo_servico.strip().lower() == expected_service['service'].strip().lower() and
+                    cidade.strip().lower() == expected_city['city'].strip().lower() and
+                    bairro.strip().lower() in [
+                        n['name'].strip().lower() for n in expected_city.get('neighborhoods', []) if n['active']
+                    ]
+                )
+
+                if match:
+                    logger.info("Serviço compatível. Aceitando...")
+                    self.driver.find_element(By.XPATH, "//*[@id='aceitar']").click()
+                else:
+                    logger.warning("Serviço não compatível. Ignorando.")
+
+        except TimeoutException:
+            logger.debug("Nenhum serviço visível no momento.")
         except Exception as e:
-            logger.warning(f"Erro ao processar serviço: {e}")
+            logger.error(f"Erro inesperado ao monitorar serviço: {e}")

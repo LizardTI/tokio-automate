@@ -9,13 +9,18 @@ logging.basicConfig(
 )
 
 def main():
-    rpa = RpaService(service_name="TOKIO - Validação de Serviços")
     try:
-        rpa.run_interactive()
+        rpa = RpaService(service_name="TOKIO - Validação de Serviços")
+        rpa.start()
+    except ValueError as e:
+        logging.error("Erro de inicialização: %s", str(e))
     except Exception as e:
         logging.error("Erro durante a execução do RPA: %s", str(e))
     finally:
-        rpa.stop()
+        try:
+            rpa.stop()
+        except:
+            pass  # evita erro se o rpa nunca foi inicializado
 
 if __name__ == "__main__":
     main()
