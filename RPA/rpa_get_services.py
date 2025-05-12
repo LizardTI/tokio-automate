@@ -158,7 +158,8 @@ class RpaService:
                     logger.info("Serviço compatível. Aceitando...")
                     self.driver.find_element(By.XPATH, "//*[@id='aceitar']").click()
                 else:
-                    logger.warning("Serviço não compatível. Ignorando.")
+                    logger.warning("Serviço não compatível. Recusando...")
+                    self.driver.find_element(By.XPATH, "//*[@id='recusar']").click()
 
         except TimeoutException:
             logger.debug("Nenhum serviço visível no momento.")
