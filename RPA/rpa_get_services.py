@@ -128,11 +128,12 @@ class RpaService:
                 EC.presence_of_element_located((By.XPATH, td_xpath))
             )
 
+            tipo_servico = td_element.text
+
             if td_element.is_displayed():
                 logger.info("Serviço detectado. Expandindo...")
                 td_element.click()
 
-                tipo_servico = td_element.text
                 bairro = self._safe_get_text("//*[@id='collapse_1']/div/div[2]/div[2]")
                 cidade = self._safe_get_text("//*[@id='collapse_1']/div/div[2]/div[3]")
                 data_inicio = self._safe_get_text("/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span")
