@@ -35,7 +35,7 @@ class DynamoDBConnection:
             while 'LastEvaluatedKey' in response:
                 response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
                 items.extend(response.get('Items', []))
+                print(f"{items}")
         except Exception as e:
             print(f"Erro ao buscar dados da tabela '{table_name}': {e}")
-            print(f"{items}")
         return items
