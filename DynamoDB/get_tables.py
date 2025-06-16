@@ -1,5 +1,10 @@
 # DynamoDB/get_tables.py
 import boto3
+import os
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente do arquivo .env
+load_dotenv()
 
 class DynamoDBConnection:
     def __init__(self, region_name, aws_access_key_id=None, aws_secret_access_key=None):
@@ -16,7 +21,12 @@ class DynamoDBConnection:
                 aws_secret_access_key=self.aws_secret_access_key
             )
         try:
-            self.dynamodb = boto3.resource('dynamodb', **params)
+            self.dynamodb = boto3.resource(
+                "dynamodb",
+                region_name=self.region_name,
+                aws_access_key_id=self.aws_access_key_id,
+                aws_secret_access_key=self.aws_secret_access_key
+            )
             return self.dynamodb
         except Exception as e:
             print(f"Erro ao conectar no DynamoDB: {e}")
@@ -27,7 +37,9 @@ class DynamoDBConnection:
         if not self.dynamodb:
             self.connect()
 
-        table = self.dynamodb.Table(table_name)
+        table = self.dynamodb.Table(
+            table_name
+        )
         items = []
         try:
             response = table.scan()

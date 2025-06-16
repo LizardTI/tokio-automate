@@ -8,7 +8,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException 
+from selenium.common.exceptions import TimeoutException
 
 from DynamoDB.get_tables import DynamoDBConnection
 
@@ -57,6 +57,82 @@ class RpaService:
         options.add_argument('--start-maximized')
         self.driver = webdriver.Chrome(options=options)
 
+    def _handle_alert_ok(self):
+        """Clica no botão de alerta, se visível."""
+        try:
+            alert_ok_btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[@id="alert-ok"]'))
+            )
+            alert_ok_btn.click()
+            logger.info('✅ Botão "alert-ok" clicado com sucesso.')
+        except TimeoutException:
+            logger.debug('ℹ️ Botão "alert-ok" não encontrado. Seguindo...')
+
+    def _process_service(self):
+        """Processa o serviço disponível na tela."""
+        try:
+            # Constantes de XPath (boa prática pra manutenção futura)
+            SERVICE_CELL_XPATH = "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]"
+            BAIRRO_XPATH = "//*[@id='collapse_1']/div/div[2]/div[2]"
+            CIDADE_XPATH = "//*[@id='collapse_1']/div/div[2]/div[3]"
+            DATA_INICIO_XPATH = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span"
+            DATA_FIM_XPATH = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span"
+            LOCALIZACAO_XPATH = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span"
+            ACEITAR_BTN_XPATH = "//*[@id='aceitar']"
+
+            # Abre o serviço
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, SERVICE_CELL_XPATH))
+                )
+                self.driver.find_element(By.XPATH, SERVICE_CELL_XPATH).click()
+                logger.info("Serviço aberto com sucesso.")
+            except TimeoutException:
+                logger.warning("⚠️ Serviço não encontrado ou não carregado a tempo.")
+                return
+
+            # Captura os dados da UI
+            tipo_servico = self.driver.find_element(By.XPATH, SERVICE_CELL_XPATH).text.strip()
+            bairro = self.driver.find_element(By.XPATH, BAIRRO_XPATH).text.strip()
+            cidade = self.driver.find_element(By.XPATH, CIDADE_XPATH).text.strip()
+            data_inicio = self.driver.find_element(By.XPATH, DATA_INICIO_XPATH).text.strip()
+            data_fim = self.driver.find_element(By.XPATH, DATA_FIM_XPATH).text.strip()
+            localizacao = self.driver.find_element(By.XPATH, LOCALIZACAO_XPATH).text.strip()
+
+            logger.info(
+                f"📋 Capturado da UI => Serviço: {tipo_servico}, Cidade: {cidade}, Bairro: {bairro}, "
+                f"Início: {data_inicio}, Fim: {data_fim}, Localização: {localizacao}"
+            )
+
+            # Validação com o esperado
+            expected_service = next((s for s in self.expected.get('services', []) if s.get('active')), None)
+            expected_city = self.expected.get('cities', [{}])[0]
+
+            if not expected_service or not expected_city:
+                logger.warning("⚠️ Dados esperados do DynamoDB não encontrados ou incompletos.")
+                return
+
+            bairro_match = bairro.lower() in [
+                n['name'].strip().lower()
+                for n in expected_city.get('neighborhoods', []) if n.get('active')
+            ]
+
+            match = (
+                tipo_servico.lower() == expected_service['service'].strip().lower() and
+                cidade.lower() == expected_city['city'].strip().lower() and
+                bairro_match
+            )
+
+            if match:
+                logger.info("✅ Dados validados com sucesso! Aceitando serviço...")
+                self.driver.find_element(By.XPATH, ACEITAR_BTN_XPATH).click()
+            else:
+                logger.warning("❌ Dados não conferem com o esperado. Serviço NÃO aceito.")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao processar serviço: {e}", exc_info=True)
+
+
     def start(self):
         logger.info("=== Iniciando fluxo de RPA '%s' ===", self.service_name)
         self.login()
@@ -103,16 +179,20 @@ class RpaService:
                     except TimeoutException:
                         logger.debug("Nenhum alerta para confirmar")
 
+                    # Adiciona chamada para tratar o modal após o login
+                    logger.info("Verificando modal de aviso após login...")
+                    self._handle_alert_ok()
+
                     logger.info("Login realizado com sucesso")
                     self.logged_in = True
                 except TimeoutException:
                     if not self.logged_in:
                         time.sleep(3)
         except Exception:
+
             logger.exception("Erro durante o login")
             self.stop()
             raise
-
     def run_interactive(self):
         try:
             self.start()
@@ -122,76 +202,7 @@ class RpaService:
             self.stop()
 
     def main_process(self):
-    try:
-        self._handle_alert_ok()
-        self._process_service()
-    except Exception as e:
-        logger.error(f"❌ Erro inesperado no processo principal: {e}", exc_info=True)
-
-def _handle_alert_ok(self):
-    """Clica no botão de alerta, se visível."""
-    try:
-        alert_ok_btn = WebDriverWait(self.driver, 1).until(
-            EC.element_to_be_clickable((By.XPATH, '//*[@id="alert-ok"]'))
-        )
-        alert_ok_btn.click()
-        logger.info('✅ Botão "alert-ok" clicado com sucesso.')
-    except TimeoutException:
-        logger.debug('ℹ️ Botão "alert-ok" não encontrado. Seguindo...')
-
-def _process_service(self):
-    """Processa o serviço disponível na tela."""
-    try:
-        # Constantes de XPath (boa prática pra manutenção futura)
-        SERVICE_CELL_XPATH = "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]"
-        BAIRRO_XPATH = "//*[@id='collapse_1']/div/div[2]/div[2]"
-        CIDADE_XPATH = "//*[@id='collapse_1']/div/div[2]/div[3]"
-        DATA_INICIO_XPATH = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span"
-        DATA_FIM_XPATH = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span"
-        LOCALIZACAO_XPATH = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[3]/div[3]/span"
-        ACEITAR_BTN_XPATH = "//*[@id='aceitar']"
-
-        # Abre o serviço
-        self.driver.find_element(By.XPATH, SERVICE_CELL_XPATH).click()
-
-        # Captura os dados da UI
-        tipo_servico = self.driver.find_element(By.XPATH, SERVICE_CELL_XPATH).text.strip()
-        bairro = self.driver.find_element(By.XPATH, BAIRRO_XPATH).text.strip()
-        cidade = self.driver.find_element(By.XPATH, CIDADE_XPATH).text.strip()
-        data_inicio = self.driver.find_element(By.XPATH, DATA_INICIO_XPATH).text.strip()
-        data_fim = self.driver.find_element(By.XPATH, DATA_FIM_XPATH).text.strip()
-        localizacao = self.driver.find_element(By.XPATH, LOCALIZACAO_XPATH).text.strip()
-
-        logger.info(
-            f"📋 Capturado da UI => Serviço: {tipo_servico}, Cidade: {cidade}, Bairro: {bairro}, "
-            f"Início: {data_inicio}, Fim: {data_fim}, Localização: {localizacao}"
-        )
-
-        # Validação com o esperado
-        expected_service = next((s for s in self.expected.get('services', []) if s.get('active')), None)
-        expected_city = self.expected.get('cities', [{}])[0]
-
-        if not expected_service or not expected_city:
-            logger.warning("⚠️ Dados esperados do DynamoDB não encontrados ou incompletos.")
-            return
-
-        bairro_match = bairro.lower() in [
-            n['name'].strip().lower()
-            for n in expected_city.get('neighborhoods', []) if n.get('active')
-        ]
-
-        match = (
-            tipo_servico.lower() == expected_service['service'].strip().lower() and
-            cidade.lower() == expected_city['city'].strip().lower() and
-            bairro_match
-        )
-
-        if match:
-            logger.info("✅ Dados validados com sucesso! Aceitando serviço...")
-            self.driver.find_element(By.XPATH, ACEITAR_BTN_XPATH).click()
-        else:
-            logger.warning("❌ Dados não conferem com o esperado. Serviço NÃO aceito.")
-
-    except Exception as e:
-        logger.warning(f"⚠️ Erro ao processar serviço: {e}", exc_info=True)
-
+        try:
+            self._process_service()
+        except Exception as e:
+            logger.error(f"❌ Erro inesperado no processo principal: {e}", exc_info=True)
