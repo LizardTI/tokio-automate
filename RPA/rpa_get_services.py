@@ -131,47 +131,86 @@ class RpaService:
     def monitor_servicos(self):
         logger.info("Monitorando serviços...")
         td_xpath = "/html/body/div[1]/app-container/div[2]/app-acompanhamento-servico/div/div[2]/div/div/table/tbody/tr[1]/td[6]"
+
+        try:
+            random_alert_ok = WebDriverWait(self.driver, 3).until(
+                EC.presence_of_element_located((By.XPATH,
+                                                "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-confirmacao-cancelamento/div/div[3]/button"))
+            )
+            random_alert_ok.click()
+            logger.info("fechando modal...")
+        except TimeoutException:
+            # não encontrou o elemento em 5s → segue em frente sem erro
+            pass
+        except Exception as e:
+            # outro erro inesperado → registra pra não ficar mudo
+            logger.exception("Erro ao tentar clicar no ok de alert de atraso", exc_info=e)
+
         try:
             td = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, td_xpath))
+                        EC.presence_of_element_located((By.XPATH, td_xpath))
             )
+            svc = td.text
+            td.click()
+
+            try:
+                random_alert_ok = WebDriverWait(self.driver, 3).until(
+                    EC.presence_of_element_located((By.XPATH, "//*[@id='alert-ok']"))
+                )
+                random_alert_ok.click()
+                logger.info("fechando modal...")
+            except TimeoutException:
+                # não encontrou o elemento em 3s → segue em frente sem erro
+                pass
+            except Exception as e:
+                # outro erro inesperado → registra pra não ficar mudo
+                logger.exception("Erro ao tentar clicar no alert-ok", exc_info=e)
 
             if td.is_displayed():
-                svc = td.text
 
-                agora = time.strftime("%H:%M")
+                open_info_xpath = "//*[@id='heading']/div/a"
+                open_info = WebDriverWait(self.driver, 1).until(
+                    EC.presence_of_element_located((By.XPATH, open_info_xpath))
+                )
+                open_info.click()
 
-                city_xpath = ""
-                nbhd_xpath = ""
+                city_xpath = "//*[@id='collapse_1']/div/div[2]/div[3]/label[2]"
+                nbhd_xpath = "//*[@id='collapse_1']/div/div[2]/div[2]/label[2]"
                 start_xpath = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[1]/span"
                 end_xpath = "/html/body/modal-overlay/bs-modal-container/div/div/app-modal-aceite/div/div/div[2]/div[4]/div[2]/span"
 
-                city = WebDriverWait(self.driver, 1).until(EC.presence_of_element_located((By.XPATH, city_xpath)))
-                nbhd = WebDriverWait(self.driver, 1).until(EC.presence_of_element_located((By.XPATH, nbhd_xpath)))
-                start_scr = WebDriverWait(self.driver, 1).until(EC.presence_of_element_located((By.XPATH, start_xpath)))
-                end_scr = WebDriverWait(self.driver, 1).until(EC.presence_of_element_located((By.XPATH, end_xpath)))
+                city = WebDriverWait(self.driver, 2).until(EC.presence_of_element_located((By.XPATH, city_xpath)))
+                nbhd = WebDriverWait(self.driver, 2).until(EC.presence_of_element_located((By.XPATH, nbhd_xpath)))
+                start_scr = WebDriverWait(self.driver, 2).until(EC.presence_of_element_located((By.XPATH, start_xpath)))
+                end_scr = WebDriverWait(self.driver, 2).until(EC.presence_of_element_located((By.XPATH, end_xpath)))
 
                 city_text = city.text
                 nbhd_text = nbhd.text
                 start_text = start_scr.text
                 end_text = end_scr.text
 
-                logger.info(f"Serviço detectado: {svc}. INICIO: {start_scr}. FIM: {end_scr}")
+                logger.info(f"Serviço detectado: {svc}. INICIO: {start_text}. FIM: {end_text}")
                 td.click()
 
+                logger.info(f"PASS 1")
                 # Validações
                 if self.is_valid_service(svc):
+                    logger.info(f"PASS 2")
                     cfg = self.get_city_config(city_text)
+                    logger.info(f"PASS 3")
                     if cfg and self.is_valid_neighborhood(cfg, nbhd_text):
+                        logger.info(f"PASS 4")
                         # escolhe janela correta
                         if cfg['is_emergency']:
+                            logger.info(f"PASS 5")
                             start_cfg, end_cfg = cfg['emergencyStartTime'], cfg['emergencyEndTime']
                         else:
+                            logger.info(f"PASS 6")
                             start_cfg, end_cfg = cfg['startTimeW'], cfg['endTimeW']
                         # valida correspondência exata
                         if start_scr == start_cfg and end_scr == end_cfg:
+                            logger.info(f"PASS 7")
                             logger.info(f"Aceitando {svc} em {city_text}/{nbhd_text} — {start_text}-{end_text}")
-                            elm.click()
                             return
         except TimeoutException:
             pass
